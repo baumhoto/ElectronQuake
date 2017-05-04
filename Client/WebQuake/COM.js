@@ -4,20 +4,6 @@ COM.argv = [];
 
 COM.standard_quake = true;
 
-COM.DefaultExtension = function(path, extension)
-{
-	var i, src;
-	for (i = path.length - 1; i >= 0; --i)
-	{
-		src = path.charCodeAt(i);
-		if (src === 47)
-			break;
-		if (src === 46)
-			return path;
-	}
-	return path + extension;
-};
-
 COM.Parse = function(data)
 {
 	COM.token = '';
@@ -123,6 +109,7 @@ COM.CheckRegistered = function()
 		if (check[i] !== pop[i])
 			Sys.Error('Corrupted data file.');
 	}
+	
 	Cvar.Set('registered', '1');
 	Con.Print('Playing registered version.\n');
 };
@@ -132,13 +119,7 @@ COM.InitArgv = function(argv)
 	COM.cmdline = (argv.join(' ') + ' ').substring(0, 256);
 	var i;
 	for (i = 0; i < argv.length; ++i)
-		COM.argv[i] = argv[i];	
-	if (COM.CheckParm('-safe') != null)
-	{
-		COM.argv[COM.argv.length] = '-nosound';
-		COM.argv[COM.argv.length] = '-nocdaudio';
-		COM.argv[COM.argv.length] = '-nomouse';
-	}
+		COM.argv[i] = argv[i];
 	if (COM.CheckParm('-rogue') != null)
 	{
 		COM.rogue = true;
@@ -153,19 +134,17 @@ COM.InitArgv = function(argv)
 
 COM.Init = function()
 {
-	if ((document.location.protocol !== 'http:') && (document.location.protocol !== 'https:'))
-		Sys.Error('Protocol is ' + document.location.protocol + ', not http: or https:');
-
 	var swaptest = new ArrayBuffer(2);
 	var swaptestview = new Uint8Array(swaptest);
 	swaptestview[0] = 1;
 	swaptestview[1] = 0;
+	COM.bigendien = ((new Uint16Array(swaptest))[0] !== 1);
+	COM.registered = Cvar.RegisterVariable('registered', '0');
 	if ((new Uint16Array(swaptest))[0] === 1)
 		COM.LittleLong = (function(l) {return l;});
 	else
 		COM.LittleLong = (function(l) {return (l >>> 24) + ((l & 0xff0000) >>> 8) + (((l & 0xff00) << 8) >>> 0) + ((l << 24) >>> 0);});
 
-	COM.registered = Cvar.RegisterVariable('registered', '0');
 	Cvar.RegisterVariable('cmdline', COM.cmdline, false, true);
 	Cmd.AddCommand('path', COM.Path_f);
 	COM.InitFilesystem();
@@ -174,72 +153,13 @@ COM.Init = function()
 
 COM.searchpaths = [];
 
-COM.Path_f = function()
-{
-	Con.Print('Current search path:\n');
-	var i = COM.searchpaths.length, j, s;
-	for (i = COM.searchpaths.length - 1; i >= 0; --i)
-	{
-		s = COM.searchpaths[i];
-		for (j = s.pack.length - 1; j >= 0; --j)
-			Con.Print(s.filename + '/' + 'pak' + j + '.pak (' + s.pack[j].length + ' files)\n');
-		Con.Print(s.filename + '\n');
-	}
-};
-
-COM.WriteFile = function(filename, data, len)
-{
-	filename = filename.toLowerCase();
-	var dest = [], i;
-	for (i = 0; i < len; ++i)
-		dest[i] = String.fromCharCode(data[i]);
-	try
-	{
-		localStorage.setItem('Quake.' + COM.searchpaths[COM.searchpaths.length - 1].filename + '/' + filename, dest.join(''));
-	}
-	catch (e)
-	{
-		Sys.Print('COM.WriteFile: failed on ' + filename + '\n');
-		return;
-	}
-	Sys.Print('COM.WriteFile: ' + filename + '\n');
-	return true;
-};
-
-COM.WriteTextFile = function(filename, data)
-{
-	filename = filename.toLowerCase();
-	try
-	{
-		localStorage.setItem('Quake.' + COM.searchpaths[COM.searchpaths.length - 1].filename + '/' + filename, data);
-	}
-	catch (e)
-	{
-		Sys.Print('COM.WriteTextFile: failed on ' + filename + '\n');
-		return;
-	}
-	Sys.Print('COM.WriteTextFile: ' + filename + '\n');
-	return true;
-};
-
 COM.LoadFile = function(filename)
 {
 	filename = filename.toLowerCase();
-	var xhr = new XMLHttpRequest();
-	xhr.overrideMimeType('text/plain; charset=x-user-defined');
-	var i, j, k, search, netpath, pak, file, data;
-	Draw.BeginDisc();
+	var src, i, j, k, search, pak, file, fd;
 	for (i = COM.searchpaths.length - 1; i >= 0; --i)
 	{
 		search = COM.searchpaths[i];
-		netpath = search.filename + '/' + filename;
-		data = localStorage.getItem('Quake.' + netpath);
-		if (data != null)
-		{
-			Sys.Print('FindFile: ' + netpath + '\n');
-			Draw.EndDisc();
-			return Q.strmem(data);
-		}
 		for (j = search.pack.length - 1; j >= 0; --j)
 		{
 			pak = search.pack[j];
@@ -249,33 +169,70 @@ COM.LoadFile = function(filename)
 				if (file.name !== filename)
 					continue;
 				if (file.filelen === 0)
-				{
-					Draw.EndDisc();
 					return new ArrayBuffer(0);
-				}
-				xhr.open('GET', search.filename + '/pak' + j + '.pak', false);
-				xhr.setRequestHeader('Range', 'bytes=' + file.filepos + '-' + (file.filepos + file.filelen - 1));
-				xhr.send();
-				if ((xhr.status >= 200) && (xhr.status <= 299) && (xhr.responseText.length === file.filelen))
+				try
 				{
-					Sys.Print('PackFile: ' + search.filename + '/pak' + j + '.pak : ' + filename + '\n')
-					Draw.EndDisc();
-					return Q.strmem(xhr.responseText);
+					var filePath = Node.path.resolve(__dirname,search.filename + '/pak' + j + '.pak');
+					fd = Node.fs.openSync(filePath, 'r');
 				}
+				catch (e)
+				{
+					break;
+				}
+				Sys.Print('PackFile: ' + search.filename + '/pak' + j + '.pak : ' + filename + '\n')
+				src = new Buffer(file.filelen);
+				Node.fs.readSync(fd, src, 0, file.filelen, file.filepos);
+				Node.fs.closeSync(fd);
 				break;
 			}
 		}
-		xhr.open('GET', netpath, false);
-		xhr.send();
-		if ((xhr.status >= 200) && (xhr.status <= 299))
+		if (src != null)
+			break;
+		try
 		{
-			Sys.Print('FindFile: ' + netpath + '\n');
-			Draw.EndDisc();
-			return Q.strmem(xhr.responseText);
+			src = Node.fs.readFileSync(search.filename + '/' + filename);
+			Sys.Print('FindFile: ' + search.filename + '/' + filename + '\n');
+			break;
+		}
+		catch (e)
+		{
 		}
 	}
-	Sys.Print('FindFile: can\'t find ' + filename + '\n');
-	Draw.EndDisc();
+	if (src == null)
+	{
+		Sys.Print('FindFile: can\'t find ' + filename + '\n');
+		return;
+	}
+	var size = src.length;
+	var dest = new ArrayBuffer(size), view = new DataView(dest);
+	var count = size >> 2;
+	if (count !== 0)
+	{
+		if (COM.bigendien !== true)
+		{
+			for (i = 0; i < count; ++i)
+				view.setUint32(i << 2, src.readUInt32LE(i << 2), true);
+		}
+		else
+		{
+			for (i = 0; i < count; ++i)
+				view.setUint32(i << 2, src.readUInt32BE(i << 2));
+		}
+	}
+	count <<= 2;
+	switch (size & 3)
+	{
+	case 1:
+		view.setUint8(count, src[count]);
+		break;
+	case 2:
+		view.setUint16(count, src.readUInt16LE(count), true);
+		break;
+	case 3:
+		view.setUint16(count, src.readUInt16LE(count), true);
+		view.setUint8(count + 2, src[count + 2]);
+	}
+	return dest;
 };
 
 COM.LoadTextFile = function(filename)
@@ -296,43 +253,44 @@ COM.LoadTextFile = function(filename)
 
 COM.LoadPackFile = function(packfile)
 {
-	var xhr = new XMLHttpRequest();
-	xhr.overrideMimeType('text/plain; charset=x-user-defined');
-	xhr.open('GET', packfile, false);
-	xhr.setRequestHeader('Range', 'bytes=0-11');
-	xhr.send();
-	if ((xhr.status <= 199) || (xhr.status >= 300) || (xhr.responseText.length !== 12))
+	var fd;
+	try
+	{
+		var filePath = Node.path.resolve(__dirname,packfile);
+		fd = Node.fs.openSync(filePath, 'r');
+	}
+	catch (e)
+	{
 		return;
-	var header = new DataView(Q.strmem(xhr.responseText));
-	if (header.getUint32(0, true) !== 0x4b434150)
+	}
+	var buf = new Buffer(12);
+	Node.fs.readSync(fd, buf, 0, 12, 0);
+	if (buf.readUInt32LE(0) !== 0x4b434150)
 		Sys.Error(packfile + ' is not a packfile');
-	var dirofs = header.getUint32(4, true);
-	var dirlen = header.getUint32(8, true);
+	var dirofs = buf.readUInt32LE(4);
+	var dirlen = buf.readUInt32LE(8);
 	var numpackfiles = dirlen >> 6;
 	if (numpackfiles !== 339)
 		COM.modified = true;
 	var pack = [];
 	if (numpackfiles !== 0)
 	{
-		xhr.open('GET', packfile, false);
-		xhr.setRequestHeader('Range', 'bytes=' + dirofs + '-' + (dirofs + dirlen - 1));
-		xhr.send();
-		if ((xhr.status <= 199) || (xhr.status >= 300) || (xhr.responseText.length !== dirlen))
-			return;
-		var info = Q.strmem(xhr.responseText);
-		if (CRC.Block(new Uint8Array(info)) !== 32981)
+		buf = new Buffer(dirlen);
+		Node.fs.readSync(fd, buf, 0, dirlen, dirofs);
+		if (CRC.Block(buf) !== 32981)
 			COM.modified = true;
 		var i;
 		for (i = 0; i < numpackfiles; ++i)
 		{
 			pack[pack.length] =
 			{
-				name: Q.memstr(new Uint8Array(info, i << 6, 56)).toLowerCase(),
-				filepos: (new DataView(info)).getUint32((i << 6) + 56, true),
-				filelen: (new DataView(info)).getUint32((i << 6) + 60, true)
+				name: Q.memstr(buf.slice(i << 6, (i << 6) + 56)).toLowerCase(),
+				filepos: buf.readUInt32LE((i << 6) + 56),
+				filelen: buf.readUInt32LE((i << 6) + 60)
 			}
 		}
 	}
+	Node.fs.closeSync(fd);
 	Con.Print('Added packfile ' + packfile + ' (' + numpackfiles + ' files)\n');
 	return pack;
 };
@@ -354,13 +312,16 @@ COM.AddGameDirectory = function(dir)
 
 COM.InitFilesystem = function()
 {
-	var i, search;
+	var i;
+	var search;
 	
 	i = COM.CheckParm('-basedir');
 	if (i != null)
+	{
 		search = COM.argv[i + 1];
-	if (search != null)
-		COM.AddGameDirectory(search);
+		if (search != null)
+			COM.AddGameDirectory(search);
+	}
 	else
 		COM.AddGameDirectory('id1');
 		
@@ -379,6 +340,4 @@ COM.InitFilesystem = function()
 			COM.AddGameDirectory(search);
 		}
 	}
-
-	COM.gamedir = [COM.searchpaths[COM.searchpaths.length - 1]];
 };

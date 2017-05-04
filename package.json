@@ -1,0 +1,22 @@
+{
+  "name": "electronquake",
+  "version": "1.0.0",
+  "description": "**ElectronQuake** is a fork of WebQuake which itself is an HTML5 WebGL port of the game Quake by id Software.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/baumhoto/WebQuake.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/baumhoto/WebQuake/issues"
+  },
+  "homepage": "https://github.com/baumhoto/WebQuake#readme",
+  "dependencies": {
+    "websocket": "^1.0.24"
+  }
+}
