@@ -1,3 +1,4 @@
 *.pak
 node_modules/
 id1/
+Client/WebQuake/
