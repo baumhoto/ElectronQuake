@@ -4,6 +4,21 @@ COM.argv = [];
 
 COM.standard_quake = true;
 
+COM.DefaultExtension = function(path, extension)
+{
+	var i, src;
+	for (i = path.length - 1; i >= 0; --i)
+	{
+		src = path.charCodeAt(i);
+		if (src === 47)
+			break;
+		if (src === 46)
+			return path;
+	}
+	return path + extension;
+};
+
+
 COM.Parse = function(data)
 {
 	COM.token = '';
@@ -190,7 +205,7 @@ COM.LoadFile = function(filename)
 			break;
 		try
 		{
-			src = Node.fs.readFileSync(search.filename + '/' + filename);
+			src = Node.fs.readFileSync(Node.path.resolve(__dirname,search.filename + '/' + filename));
 			Sys.Print('FindFile: ' + search.filename + '/' + filename + '\n');
 			break;
 		}
@@ -340,4 +355,22 @@ COM.InitFilesystem = function()
 			COM.AddGameDirectory(search);
 		}
 	}
+};
+
+COM.WriteTextFile = function(filename, data)
+{
+	filename = filename.toLowerCase();
+	try
+	{
+		var filePath = Node.path.resolve(__dirname,COM.searchpaths[COM.searchpaths.length - 1].filename + '/' + filename);
+		fd = Node.fs.openSync(filePath, 'w');
+		Node.fs.writeSync(fd, data);
+	}
+	catch (e)
+	{
+		Sys.Print('COM.WriteTextFile: failed on ' + filename + '\n');
+		return;
+	}
+	Sys.Print('COM.WriteTextFile: ' + filename + '\n');
+	return true;
 };

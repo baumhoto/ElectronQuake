@@ -16,6 +16,9 @@ Sys.Quit = function()
 		document.getElementById('end2').style.display = 'inline';
 	else
 		document.getElementById('end1').style.display = 'inline';
+
+    setTimeout(function() { Electron.app.remote.app.quit() }, 3000);
+
 	throw new Error;
 };
 
